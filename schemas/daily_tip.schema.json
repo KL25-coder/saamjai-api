@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/daily_tip.json",
+  "title": "DailyTip",
+  "type": "object",
+  "required": ["id", "date", "locale", "action", "why", "updated_at"],
+  "properties": {
+    "id": { "type": "string" },
+    "date": { "type": "string", "format": "date" },
+    "locale": { "type": "string", "enum": ["zh-HK", "zh-CN", "en"] },
+    "care_q": { "type": ["string", "null"] },
+    "banter": { "type": ["string", "null"] },
+    "action": { "type": "string", "minLength": 1 },
+    "why": { "type": "string", "minLength": 1 },
+    "domain": {
+      "type": "string",
+      "enum": ["health", "study", "work", "romance", "family", "friends"]
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

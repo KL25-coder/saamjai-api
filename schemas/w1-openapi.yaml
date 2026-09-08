@@ -1,0 +1,228 @@
+openapi: 3.0.3
+info:
+  title: 三仔 API (W1 stub)
+  version: 0.1.0
+  description: >
+    Privacy-first tip + chat backend. Fortune/chart raw data stays server-side
+    (birth_vault). Client sees product copy only. LLM chat never alters tips.
+servers:
+  - url: https://api.example.local/v1
+    description: W1 mock / staging placeholder
+
+paths:
+  /tips/today:
+    get:
+      operationId: getTodayTip
+      summary: Today's tip three-grid (offline-cacheable)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Today's tip
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string, example: 'private, max-age=300' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyTip'
+        '304':
+          description: Not modified (use local cache)
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Current user profile (no birth vault fields)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Profile
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '304':
+          description: Not modified
+
+  /chat:
+    post:
+      operationId: postChat
+      summary: Online chat (cloud LLM; locked persona + today's tip context)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Assistant reply
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '503':
+          description: Offline / upstream unavailable — client should use reply_pack
+
+  /reply-packs/current:
+    get:
+      operationId: getReplyPack
+      summary: Preloaded offline FAQ / short replies for today's tip
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Reply pack
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyPack'
+        '304':
+          description: Not modified
+
+components:
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+      description: Client ETag from last cache
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      schema:
+        type: string
+        enum: [zh-HK, zh-CN, en]
+      description: Preferred locale; falls back to profile.locale
+
+  schemas:
+    Locale:
+      type: string
+      enum: [zh-HK, zh-CN, en]
+
+    DailyTip:
+      type: object
+      required: [id, date, locale, action, why, updated_at]
+      properties:
+        id: { type: string, example: tip_2026-09-09_zh-HK }
+        date: { type: string, format: date, example: '2026-09-09' }
+        locale: { $ref: '#/components/schemas/Locale' }
+        care_q:
+          type: string
+          nullable: true
+          description: Optional care line; empty/null = skip in UI
+        banter:
+          type: string
+          nullable: true
+          description: Optional light tease; never argue; may be empty
+        action:
+          type: string
+          description: One concrete daily deed (scene-level)
+        why:
+          type: string
+          description: Plain-language reason (no occult jargon)
+        domain:
+          type: string
+          enum: [health, study, work, romance, family, friends]
+          description: Soft category for analytics; not shown as fortune
+        updated_at: { type: string, format: date-time }
+
+    UserProfile:
+      type: object
+      required: [user_id, display_name, locale, familiarity_lv, preferred_domains, updated_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        familiarity_lv:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Lv1–5; W1 ships Lv1 UX only
+        preferred_domains:
+          type: array
+          items:
+            type: string
+            enum: [health, study, work, romance, family, friends]
+        timezone:
+          type: string
+          example: Asia/Hong_Kong
+        updated_at: { type: string, format: date-time }
+        # birth_vault NEVER appears here — server-only
+
+    ChatRequest:
+      type: object
+      required: [message, tip_id, locale]
+      properties:
+        message: { type: string, maxLength: 2000 }
+        tip_id: { type: string, description: Must match today's tip id }
+        locale: { $ref: '#/components/schemas/Locale' }
+        client_message_id:
+          type: string
+          format: uuid
+          description: Idempotency key
+        history:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ChatTurn'
+          description: Recent turns; server may truncate
+
+    ChatTurn:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+
+    ChatResponse:
+      type: object
+      required: [reply, tip_id, model_tier, updated_at]
+      properties:
+        reply:
+          type: string
+          description: Tone/chat only; never changes action/why or fortune
+        tip_id: { type: string }
+        model_tier:
+          type: string
+          enum: [haiku, gpt-4o-mini, other-mini]
+        finish_reason:
+          type: string
+          enum: [stop, length, filtered]
+        updated_at: { type: string, format: date-time }
+
+    ReplyPack:
+      type: object
+      required: [tip_id, locale, entries, updated_at]
+      properties:
+        tip_id: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplyPackEntry'
+        updated_at: { type: string, format: date-time }
+
+    ReplyPackEntry:
+      type: object
+      required: [intent, reply]
+      properties:
+        intent:
+          type: string
+          enum: [care, faq_what, faq_why, faq_busy, faq_offline, encourage]
+        triggers:
+          type: array
+          items: { type: string }
+          description: Optional keyword hints for client matching
+        reply: { type: string }

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/reply_pack.json",
+  "title": "ReplyPack",
+  "type": "object",
+  "required": ["tip_id", "locale", "entries", "updated_at"],
+  "properties": {
+    "tip_id": { "type": "string" },
+    "locale": { "type": "string", "enum": ["zh-HK", "zh-CN", "en"] },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["intent", "reply"],
+        "properties": {
+          "intent": {
+            "type": "string",
+            "enum": ["care", "faq_what", "faq_why", "faq_busy", "faq_offline", "encourage"]
+          },
+          "triggers": { "type": "array", "items": { "type": "string" } },
+          "reply": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
