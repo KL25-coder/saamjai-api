@@ -1,0 +1,19 @@
+{
+  "name": "saamjai-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "三仔 / Saamjai W1 Fastify mock server",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "fastify": "^5.6.0"
+  }
+}
