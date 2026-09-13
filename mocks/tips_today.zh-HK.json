@@ -7,5 +7,6 @@
   "action": "今日只做一件事：十一點前關晒通知，衝完涼就訓",
   "why": "你近排為工作同屋企操心偏多，再撐只會更亂。",
   "domain": "work",
-  "updated_at": "2026-09-09T11:00:00Z"
+  "updated_at": "2026-09-09T11:00:00Z",
+  "personalization_mode": "conservative"
 }

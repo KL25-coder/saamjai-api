@@ -1,0 +1,323 @@
+openapi: 3.0.3
+info:
+  title: 三仔 API (W2 stub)
+  version: 0.2.0
+  description: >
+    W2 adds onboarding + tip personalization pipeline.
+    birth_vault is server-only. Client sees tip four fields + calibration only.
+    Rules engine decides tip conclusions; LLM may only polish tone.
+
+servers:
+  - url: http://localhost:3000/v1
+    description: Local Fastify mock
+
+paths:
+  /tips/today:
+    get:
+      operationId: getTodayTip
+      summary: Today's tip (personalized or conservative)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Tip three-grid (+ optional banter)
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyTip' }
+        '304':
+          description: Not modified
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Profile + calibration (no birth_vault)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Profile
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '304':
+          description: Not modified
+
+  /chat:
+    post:
+      operationId: postChat
+      summary: Ephemeral chat; history optional/empty for companion stage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '200':
+          description: Reply
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatResponse' }
+        '503':
+          description: Use reply_pack
+
+  /reply-packs/current:
+    get:
+      operationId: getReplyPack
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Offline pack
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReplyPack' }
+        '304':
+          description: Not modified
+
+  /onboarding/birth:
+    post:
+      operationId: postOnboardingBirth
+      summary: Write birth vault (server-only). Response never echoes raw birth fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BirthVaultWrite' }
+      responses:
+        '200':
+          description: Accepted receipt only
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, partial_uncertain, updated_at]
+                properties:
+                  received: { type: boolean }
+                  partial_uncertain: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/focus:
+    post:
+      operationId: postOnboardingFocus
+      summary: One thing user wants company with (text and/or chips)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FocusThing' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, updated_at]
+                properties:
+                  ok: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/answers:
+    post:
+      operationId: postOnboardingAnswers
+      summary: Submit one or more of the five dial questions (skippable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: { $ref: '#/components/schemas/OnboardingAnswer' }
+      responses:
+        '200':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, updated_at]
+                properties:
+                  ok: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/complete:
+    post:
+      operationId: postOnboardingComplete
+      summary: Run calibration; returns client-safe status only
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                skipped_all: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Calibration result for short overlay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalibrationResult' }
+
+components:
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      schema: { type: string, enum: [zh-HK, zh-CN, en] }
+
+  schemas:
+    Locale:
+      type: string
+      enum: [zh-HK, zh-CN, en]
+
+    Calibration:
+      type: string
+      enum: [matched, needs_confirm, skipped, pending]
+
+    DailyTip:
+      type: object
+      required: [id, date, locale, action, why, updated_at]
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        locale: { $ref: '#/components/schemas/Locale' }
+        care_q: { type: string, nullable: true }
+        banter: { type: string, nullable: true }
+        action: { type: string }
+        why: { type: string }
+        domain:
+          type: string
+          enum: [health, study, work, romance, family, friends]
+        personalization_mode:
+          type: string
+          enum: [personalized, conservative]
+        updated_at: { type: string, format: date-time }
+
+    UserProfile:
+      type: object
+      required: [user_id, display_name, locale, familiarity_lv, preferred_domains, calibration, updated_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        familiarity_lv: { type: integer, minimum: 1, maximum: 5 }
+        preferred_domains:
+          type: array
+          items:
+            type: string
+            enum: [health, study, work, romance, family, friends]
+        timezone: { type: string }
+        calibration: { $ref: '#/components/schemas/Calibration' }
+        onboarding_complete: { type: boolean }
+        updated_at: { type: string, format: date-time }
+
+    ChatRequest:
+      type: object
+      required: [message, tip_id, locale]
+      properties:
+        message: { type: string, maxLength: 2000 }
+        tip_id: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        client_message_id: { type: string, format: uuid }
+        history:
+          type: array
+          maxItems: 20
+          description: Optional; companion stage sends empty/omits
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string }
+
+    ChatResponse:
+      type: object
+      required: [reply, tip_id, model_tier, updated_at]
+      properties:
+        reply: { type: string }
+        tip_id: { type: string }
+        model_tier: { type: string, enum: [haiku, gpt-4o-mini, other-mini] }
+        finish_reason: { type: string, enum: [stop, length, filtered] }
+        updated_at: { type: string, format: date-time }
+
+    ReplyPack:
+      type: object
+      required: [tip_id, locale, entries, updated_at]
+      properties:
+        tip_id: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [intent, reply]
+            properties:
+              intent:
+                type: string
+                enum: [care, faq_what, faq_why, faq_busy, faq_offline, encourage]
+              triggers:
+                type: array
+                items: { type: string }
+              reply: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    BirthVaultWrite:
+      type: object
+      properties:
+        year: { type: integer, nullable: true }
+        month: { type: integer, nullable: true, minimum: 1, maximum: 12 }
+        day: { type: integer, nullable: true, minimum: 1, maximum: 31 }
+        hour: { type: integer, nullable: true, minimum: 0, maximum: 23 }
+        uncertain_fields:
+          type: array
+          items: { type: string, enum: [year, month, day, hour] }
+      additionalProperties: false
+
+    FocusThing:
+      type: object
+      properties:
+        text: { type: string, nullable: true, maxLength: 200 }
+        chips:
+          type: array
+          items:
+            type: string
+            enum: [health, study, work, romance, family]
+      additionalProperties: false
+
+    OnboardingAnswer:
+      type: object
+      required: [qid, answer]
+      properties:
+        qid: { type: string, enum: [q1, q2, q3, q4, q5] }
+        answer: { type: string, enum: [yes, no, unsure, skip] }
+      additionalProperties: false
+
+    CalibrationResult:
+      type: object
+      required: [calibration, client_message_key, updated_at]
+      properties:
+        calibration: { $ref: '#/components/schemas/Calibration' }
+        familiarity_delta: { type: integer, minimum: 0, maximum: 1 }
+        client_message_key:
+          type: string
+          enum: [matched, needs_confirm, skipped]
+        updated_at: { type: string, format: date-time }

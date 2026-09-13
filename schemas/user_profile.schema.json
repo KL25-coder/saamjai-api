@@ -3,21 +3,69 @@
   "$id": "https://sanjai.local/schemas/user_profile.json",
   "title": "UserProfile",
   "type": "object",
-  "required": ["user_id", "display_name", "locale", "familiarity_lv", "preferred_domains", "updated_at"],
+  "required": [
+    "user_id",
+    "display_name",
+    "locale",
+    "familiarity_lv",
+    "preferred_domains",
+    "updated_at"
+  ],
   "properties": {
-    "user_id": { "type": "string", "format": "uuid" },
-    "display_name": { "type": "string" },
-    "locale": { "type": "string", "enum": ["zh-HK", "zh-CN", "en"] },
-    "familiarity_lv": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "zh-HK",
+        "zh-CN",
+        "en"
+      ]
+    },
+    "familiarity_lv": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
     "preferred_domains": {
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["health", "study", "work", "romance", "family", "friends"]
+        "enum": [
+          "health",
+          "study",
+          "work",
+          "romance",
+          "family",
+          "friends"
+        ]
       }
     },
-    "timezone": { "type": "string" },
-    "updated_at": { "type": "string", "format": "date-time" }
+    "timezone": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "calibration": {
+      "type": "string",
+      "enum": [
+        "matched",
+        "needs_confirm",
+        "skipped",
+        "pending"
+      ],
+      "description": "Client-safe dial status only; never includes birth_vault"
+    },
+    "onboarding_complete": {
+      "type": "boolean"
+    }
   },
   "additionalProperties": false,
   "description": "birth_vault is server-only and must never appear on this schema"

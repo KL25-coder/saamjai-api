@@ -3,20 +3,73 @@
   "$id": "https://sanjai.local/schemas/daily_tip.json",
   "title": "DailyTip",
   "type": "object",
-  "required": ["id", "date", "locale", "action", "why", "updated_at"],
+  "required": [
+    "id",
+    "date",
+    "locale",
+    "action",
+    "why",
+    "updated_at"
+  ],
   "properties": {
-    "id": { "type": "string" },
-    "date": { "type": "string", "format": "date" },
-    "locale": { "type": "string", "enum": ["zh-HK", "zh-CN", "en"] },
-    "care_q": { "type": ["string", "null"] },
-    "banter": { "type": ["string", "null"] },
-    "action": { "type": "string", "minLength": 1 },
-    "why": { "type": "string", "minLength": 1 },
+    "id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "zh-HK",
+        "zh-CN",
+        "en"
+      ]
+    },
+    "care_q": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "banter": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1
+    },
     "domain": {
       "type": "string",
-      "enum": ["health", "study", "work", "romance", "family", "friends"]
+      "enum": [
+        "health",
+        "study",
+        "work",
+        "romance",
+        "family",
+        "friends"
+      ]
     },
-    "updated_at": { "type": "string", "format": "date-time" }
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "personalization_mode": {
+      "type": "string",
+      "enum": [
+        "personalized",
+        "conservative"
+      ],
+      "description": "conservative when calibration=needs_confirm or vault incomplete"
+    }
   },
   "additionalProperties": false
 }

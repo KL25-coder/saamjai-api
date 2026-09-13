@@ -78,3 +78,18 @@ curl -i http://localhost:3000/v1/reply-packs/current
 
 - `birth_vault` is server-only — never on client schemas or `/v1/me`
 - LLM does tone/chat only; the tip pipeline owns conclusions
+
+
+## W2 onboarding + tip pipeline (stub)
+
+Contracts: `schemas/w2-openapi.yaml`, `schemas/onboarding.schema.json`.
+
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/v1/onboarding/birth` | Writes `birth_vault` server-side; response is receipt only |
+| POST | `/v1/onboarding/focus` | One focus thing / chips |
+| POST | `/v1/onboarding/answers` | Five dial Qs (`yes`/`no`/`unsure`/`skip`) |
+| POST | `/v1/onboarding/complete` | Returns `calibration` only |
+
+Client must never receive birth raw fields. Tip `personalization_mode` is `conservative` when `needs_confirm`.
+Rules engine owns conclusions; LLM polishes `care_q`/`banter`/`action`/`why` tone only.

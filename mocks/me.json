@@ -3,7 +3,13 @@
   "display_name": "Kev",
   "locale": "zh-HK",
   "familiarity_lv": 1,
-  "preferred_domains": ["health", "work", "family"],
+  "preferred_domains": [
+    "health",
+    "work",
+    "family"
+  ],
   "timezone": "Asia/Hong_Kong",
-  "updated_at": "2026-09-08T16:00:00Z"
+  "updated_at": "2026-09-08T16:00:00Z",
+  "calibration": "pending",
+  "onboarding_complete": false
 }

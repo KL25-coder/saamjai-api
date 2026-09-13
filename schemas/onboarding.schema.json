@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/onboarding.json",
+  "title": "Onboarding",
+  "definitions": {
+    "Calibration": {
+      "type": "string",
+      "enum": ["matched", "needs_confirm", "skipped", "pending"]
+    },
+    "BirthVaultWrite": {
+      "type": "object",
+      "description": "Server-only after accept; never echoed to client",
+      "properties": {
+        "year": { "type": ["integer", "null"] },
+        "month": { "type": ["integer", "null"], "minimum": 1, "maximum": 12 },
+        "day": { "type": ["integer", "null"], "minimum": 1, "maximum": 31 },
+        "hour": { "type": ["integer", "null"], "minimum": 0, "maximum": 23 },
+        "uncertain_fields": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["year", "month", "day", "hour"] }
+        }
+      },
+      "additionalProperties": false
+    },
+    "OnboardingAnswer": {
+      "type": "object",
+      "required": ["qid", "answer"],
+      "properties": {
+        "qid": { "type": "string", "enum": ["q1", "q2", "q3", "q4", "q5"] },
+        "answer": {
+          "type": "string",
+          "enum": ["yes", "no", "unsure", "skip"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FocusThing": {
+      "type": "object",
+      "properties": {
+        "text": { "type": ["string", "null"], "maxLength": 200 },
+        "chips": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["health", "study", "work", "romance", "family"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CalibrationResult": {
+      "type": "object",
+      "required": ["calibration", "updated_at"],
+      "properties": {
+        "calibration": { "$ref": "#/definitions/Calibration" },
+        "familiarity_delta": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "client_message_key": {
+          "type": "string",
+          "enum": ["matched", "needs_confirm", "skipped"],
+          "description": "Maps to Lumen short overlay copy; no raw chart text"
+        },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
