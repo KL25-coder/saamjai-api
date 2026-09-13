@@ -5,6 +5,17 @@ import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { buildChatReply } from "./chat.js";
+import {
+  createOnboardingState,
+  isPartialUncertain,
+  nowIso,
+  personalizationMode,
+  pickBirth,
+  pickFocus,
+  publicProfile,
+  runCalibration,
+  upsertAnswers,
+} from "./onboarding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -12,15 +23,6 @@ const MOCKS = path.join(ROOT, "mocks");
 
 const DEFAULT_LOCALE = "zh-HK";
 const SUPPORTED_LOCALES = ["zh-HK", "zh-CN", "en"];
-const PROFILE_KEYS = [
-  "user_id",
-  "display_name",
-  "locale",
-  "familiarity_lv",
-  "preferred_domains",
-  "timezone",
-  "updated_at",
-];
 
 const PORT = Number.parseInt(process.env.PORT ?? "3000", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -66,14 +68,11 @@ function loadReplyPack(locale) {
   return readJson(mockPath("reply_pack", locale));
 }
 
-function loadPublicProfile() {
-  const raw = readJson(path.join(MOCKS, "me.json"));
-  const profile = {};
-  for (const key of PROFILE_KEYS) {
-    if (Object.hasOwn(raw, key)) profile[key] = raw[key];
-  }
-  return profile;
+function loadSeedProfile() {
+  return readJson(path.join(MOCKS, "me.json"));
 }
+
+const state = createOnboardingState(loadSeedProfile());
 
 function strongEtag(payload) {
   const hash = createHash("sha1")
@@ -120,9 +119,12 @@ await app.register(cors, {
 
 app.setErrorHandler((err, request, reply) => {
   if (err.validation || err.statusCode === 400) {
+    const isChat = String(request.url ?? "").includes("/chat");
     return reply.code(400).send({
       error: "bad_request",
-      message: "tip_id and message are required",
+      message: isChat
+        ? "tip_id and message are required"
+        : (err.message ?? "invalid request"),
     });
   }
   request.log.error(err);
@@ -136,14 +138,14 @@ app.setErrorHandler((err, request, reply) => {
 app.get("/v1/tips/today", async (request, reply) => {
   const locale = resolveLocale(request.headers["accept-language"]);
   const tip = loadTip(locale);
+  tip.personalization_mode = personalizationMode(state.profile.calibration);
   return sendCachedJson(request, reply, tip, {
     "Cache-Control": "private, max-age=300",
   });
 });
 
 app.get("/v1/me", async (request, reply) => {
-  const profile = loadPublicProfile();
-  return sendCachedJson(request, reply, profile);
+  return sendCachedJson(request, reply, publicProfile(state));
 });
 
 app.post(
@@ -206,9 +208,132 @@ app.get("/v1/reply-packs/current", async (request, reply) => {
   return sendCachedJson(request, reply, pack);
 });
 
+const birthWriteSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    year: { type: ["integer", "null"] },
+    month: { type: ["integer", "null"], minimum: 1, maximum: 12 },
+    day: { type: ["integer", "null"], minimum: 1, maximum: 31 },
+    hour: { type: ["integer", "null"], minimum: 0, maximum: 23 },
+    uncertain_fields: {
+      type: "array",
+      items: { type: "string", enum: ["year", "month", "day", "hour"] },
+    },
+  },
+};
+
+const focusThingSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    text: { type: ["string", "null"], maxLength: 200 },
+    chips: {
+      type: "array",
+      items: {
+        type: "string",
+        enum: ["health", "study", "work", "romance", "family"],
+      },
+    },
+  },
+};
+
+const onboardingAnswersSchema = {
+  type: "object",
+  required: ["answers"],
+  additionalProperties: false,
+  properties: {
+    answers: {
+      type: "array",
+      minItems: 1,
+      maxItems: 5,
+      items: {
+        type: "object",
+        required: ["qid", "answer"],
+        additionalProperties: false,
+        properties: {
+          qid: { type: "string", enum: ["q1", "q2", "q3", "q4", "q5"] },
+          answer: { type: "string", enum: ["yes", "no", "unsure", "skip"] },
+        },
+      },
+    },
+  },
+};
+
+app.post(
+  "/v1/onboarding/birth",
+  { schema: { body: birthWriteSchema } },
+  async (request, reply) => {
+    const birth = pickBirth(request.body);
+    state.birth = birth;
+    const updated_at = nowIso();
+    state.profile.updated_at = updated_at;
+    // Receipt only — never echo year/month/day/hour.
+    return reply.send({
+      received: true,
+      partial_uncertain: isPartialUncertain(birth),
+      updated_at,
+    });
+  },
+);
+
+app.post(
+  "/v1/onboarding/focus",
+  { schema: { body: focusThingSchema } },
+  async (request, reply) => {
+    state.focus = pickFocus(request.body);
+    const updated_at = nowIso();
+    state.profile.updated_at = updated_at;
+    return reply.send({ ok: true, updated_at });
+  },
+);
+
+app.post(
+  "/v1/onboarding/answers",
+  { schema: { body: onboardingAnswersSchema } },
+  async (request, reply) => {
+    state.answers = upsertAnswers(state.answers, request.body.answers);
+    const updated_at = nowIso();
+    state.profile.updated_at = updated_at;
+    return reply.send({ ok: true, updated_at });
+  },
+);
+
+app.post(
+  "/v1/onboarding/complete",
+  {
+    schema: {
+      body: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          skipped_all: { type: "boolean" },
+        },
+      },
+    },
+    preValidation: async (request) => {
+      if (request.body == null) request.body = {};
+    },
+  },
+  async (request, reply) => {
+    const skippedAll = Boolean(request.body?.skipped_all);
+    const result = runCalibration(state, skippedAll);
+    const updated_at = nowIso();
+    state.profile.calibration = result.calibration;
+    state.profile.onboarding_complete = true;
+    state.profile.updated_at = updated_at;
+    return reply.send({
+      calibration: result.calibration,
+      familiarity_delta: result.familiarity_delta,
+      client_message_key: result.client_message_key,
+      updated_at,
+    });
+  },
+);
+
 try {
   await app.listen({ port: PORT, host: HOST });
-  app.log.info(`三仔 W1 mock listening on http://${HOST}:${PORT}/v1`);
+  app.log.info(`三仔 W2 mock listening on http://${HOST}:${PORT}/v1`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

@@ -1,6 +1,6 @@
-# 三仔 API — W1 mock
+# 三仔 API — W2 mock
 
-Privacy-first tip + chat backend stub. Fortune/chart raw data stays server-side (`birth_vault`). Clients see product copy only. LLM chat never alters tips.
+Privacy-first tip + chat + onboarding backend stub. Fortune/chart raw data stays server-side (`birth_vault`). Clients see product copy and calibration status only. LLM chat never alters tips.
 
 ## Run
 
@@ -19,13 +19,13 @@ PORT=3000 npm start
 
 **Client mock base URL:** `http://localhost:3000/v1`
 
-The OpenAPI placeholder `https://api.example.local/v1` maps here in W1. Point Flutter (including web/dev) at `http://localhost:3000/v1`. CORS is enabled for local/dev origins.
+The OpenAPI placeholder `https://api.example.local/v1` maps here. Point Flutter (including web/dev) at `http://localhost:3000/v1`. CORS is enabled for local/dev origins.
 
 ## Contracts
 
-- OpenAPI: `schemas/w1-openapi.yaml` (source of truth)
-- JSON Schema: `schemas/*.schema.json`
-- Mocks: `mocks/`
+- OpenAPI: `schemas/w2-openapi.yaml` (W2 source of truth; W1 subset in `schemas/w1-openapi.yaml`)
+- JSON Schema: `schemas/*.schema.json` (`onboarding.schema.json` for vault write / answers / calibration)
+- Mocks: `mocks/` (`me.json` includes `calibration`; never includes birth fields)
 
 ## Endpoints (W1)
 
@@ -80,16 +80,65 @@ curl -i http://localhost:3000/v1/reply-packs/current
 - LLM does tone/chat only; the tip pipeline owns conclusions
 
 
-## W2 onboarding + tip pipeline (stub)
+## W2 onboarding + tip pipeline (in-memory mock)
 
 Contracts: `schemas/w2-openapi.yaml`, `schemas/onboarding.schema.json`.
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/v1/onboarding/birth` | Writes `birth_vault` server-side; response is receipt only |
-| POST | `/v1/onboarding/focus` | One focus thing / chips |
-| POST | `/v1/onboarding/answers` | Five dial Qs (`yes`/`no`/`unsure`/`skip`) |
-| POST | `/v1/onboarding/complete` | Returns `calibration` only |
+| POST | `/v1/onboarding/birth` | Writes `birth_vault` in memory; **receipt only** — never echoes `year`/`month`/`day`/`hour` |
+| POST | `/v1/onboarding/focus` | One focus thing / chips; `{ ok, updated_at }` |
+| POST | `/v1/onboarding/answers` | One or more of five dial Qs (`q1`–`q5`, `yes`/`no`/`unsure`/`skip`); `{ ok, updated_at }` |
+| POST | `/v1/onboarding/complete` | Optional `{ skipped_all }`; returns `CalibrationResult` only |
 
-Client must never receive birth raw fields. Tip `personalization_mode` is `conservative` when `needs_confirm`.
-Rules engine owns conclusions; LLM polishes `care_q`/`banter`/`action`/`why` tone only.
+State is process-memory (lost on restart). `GET /v1/me` returns `calibration` + `onboarding_complete` and never birth fields.
+
+`GET /v1/tips/today` sets `personalization_mode`:
+- `personalized` when `calibration=matched`
+- `conservative` when `needs_confirm`, `pending`, or `skipped` (same tip copy in this mock)
+
+Calibration (mock):
+- `skipped_all` or no birth and no answers → `skipped` (`familiarity_delta=0`)
+- birth has `uncertain_fields` or missing `year`/`month`/`day` → `needs_confirm`
+- else if at least 3 answers are `yes`/`no` → `matched` (`familiarity_delta=1`)
+- else → `needs_confirm`
+
+Client must never receive birth raw fields. Rules engine owns conclusions; LLM polishes `care_q`/`banter`/`action`/`why` tone only.
+
+```bash
+# Birth vault write — receipt only (no year/month/day/hour in response)
+curl -s http://localhost:3000/v1/onboarding/birth \
+  -H 'Content-Type: application/json' \
+  -d '{"year":1990,"month":5,"day":12,"hour":8}'
+
+# Partial / uncertain birth
+curl -s http://localhost:3000/v1/onboarding/birth \
+  -H 'Content-Type: application/json' \
+  -d '{"year":1990,"month":5,"day":null,"uncertain_fields":["day","hour"]}'
+
+# Focus thing
+curl -s http://localhost:3000/v1/onboarding/focus \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"想瞓得好啲","chips":["health","work"]}'
+
+# Dial answers
+curl -s http://localhost:3000/v1/onboarding/answers \
+  -H 'Content-Type: application/json' \
+  -d '{"answers":[{"qid":"q1","answer":"yes"},{"qid":"q2","answer":"no"},{"qid":"q3","answer":"yes"},{"qid":"q4","answer":"skip"},{"qid":"q5","answer":"unsure"}]}'
+
+# Complete → CalibrationResult (matched if birth is complete + ≥3 yes/no)
+curl -s http://localhost:3000/v1/onboarding/complete \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# Skip all
+curl -s http://localhost:3000/v1/onboarding/complete \
+  -H 'Content-Type: application/json' \
+  -d '{"skipped_all":true}'
+
+# Profile after onboarding (calibration present; no birth fields)
+curl -s http://localhost:3000/v1/me
+
+# Tip mode follows calibration (conservative unless matched)
+curl -s http://localhost:3000/v1/tips/today
+```
