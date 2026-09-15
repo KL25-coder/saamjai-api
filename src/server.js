@@ -1,11 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { buildChatReply } from "./chat.js";
+import { buildLocalContext, parseCoord } from "./context.js";
 import {
+  applyProfilePatch,
   createOnboardingState,
   isPartialUncertain,
   nowIso,
@@ -16,6 +18,11 @@ import {
   runCalibration,
   upsertAnswers,
 } from "./onboarding.js";
+import {
+  answeredQids,
+  createSessionStore,
+  nextDialPrompt,
+} from "./session.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -72,8 +79,6 @@ function loadSeedProfile() {
   return readJson(path.join(MOCKS, "me.json"));
 }
 
-const state = createOnboardingState(loadSeedProfile());
-
 function strongEtag(payload) {
   const hash = createHash("sha1")
     .update(JSON.stringify(payload))
@@ -98,115 +103,19 @@ function sendCachedJson(request, reply, payload, extraHeaders = {}) {
   return reply.header("ETag", etag).send(payload);
 }
 
-const app = Fastify({
-  logger: true,
-});
-
-await app.register(cors, {
-  origin: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Accept",
-    "Accept-Language",
-    "If-None-Match",
-    "X-Force-Offline",
-  ],
-  exposedHeaders: ["ETag", "Cache-Control"],
-  credentials: true,
-  maxAge: 86400,
-});
-
-app.setErrorHandler((err, request, reply) => {
-  if (err.validation || err.statusCode === 400) {
-    const isChat = String(request.url ?? "").includes("/chat");
-    return reply.code(400).send({
-      error: "bad_request",
-      message: isChat
-        ? "tip_id and message are required"
-        : (err.message ?? "invalid request"),
-    });
-  }
-  request.log.error(err);
-  const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
-  return reply.code(status).send({
-    error: status === 500 ? "internal" : "error",
-    message: status === 500 ? "internal error" : err.message,
-  });
-});
-
-app.get("/v1/tips/today", async (request, reply) => {
-  const locale = resolveLocale(request.headers["accept-language"]);
-  const tip = loadTip(locale);
-  tip.personalization_mode = personalizationMode(state.profile.calibration);
-  return sendCachedJson(request, reply, tip, {
-    "Cache-Control": "private, max-age=300",
-  });
-});
-
-app.get("/v1/me", async (request, reply) => {
-  return sendCachedJson(request, reply, publicProfile(state));
-});
-
-app.post(
-  "/v1/chat",
-  {
-    schema: {
-      body: {
-        type: "object",
-        required: ["message", "tip_id"],
-        properties: {
-          message: { type: "string", minLength: 1, maxLength: 2000 },
-          tip_id: { type: "string", minLength: 1 },
-          locale: { type: "string", enum: SUPPORTED_LOCALES },
-          client_message_id: { type: "string" },
-          history: {
-            type: "array",
-            maxItems: 20,
-            items: {
-              type: "object",
-              required: ["role", "content"],
-              properties: {
-                role: { type: "string", enum: ["user", "assistant"] },
-                content: { type: "string" },
-              },
-            },
-          },
-        },
-      },
+const profilePatchSchema = {
+  type: "object",
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    display_name: { type: "string", minLength: 1, maxLength: 40 },
+    interests: {
+      type: "array",
+      maxItems: 12,
+      items: { type: "string", maxLength: 40 },
     },
   },
-  async (request, reply) => {
-    if (request.headers["x-force-offline"] === "1") {
-      return reply.code(503).send({
-        error: "unavailable",
-        message:
-          "Offline / upstream unavailable — client should use reply_pack",
-      });
-    }
-
-    const { message, locale } = request.body;
-    const tipLocale = SUPPORTED_LOCALES.includes(locale)
-      ? locale
-      : DEFAULT_LOCALE;
-    const tip = loadTip(tipLocale);
-    const replyText = buildChatReply(message, tip);
-
-    return reply.send({
-      reply: replyText,
-      tip_id: tip.id,
-      model_tier: "haiku",
-      finish_reason: "stop",
-      updated_at: new Date().toISOString(),
-    });
-  },
-);
-
-app.get("/v1/reply-packs/current", async (request, reply) => {
-  const locale = resolveLocale(request.headers["accept-language"]);
-  const pack = loadReplyPack(locale);
-  return sendCachedJson(request, reply, pack);
-});
+};
 
 const birthWriteSchema = {
   type: "object",
@@ -260,81 +169,272 @@ const onboardingAnswersSchema = {
   },
 };
 
-app.post(
-  "/v1/onboarding/birth",
-  { schema: { body: birthWriteSchema } },
-  async (request, reply) => {
-    const birth = pickBirth(request.body);
-    state.birth = birth;
-    const updated_at = nowIso();
-    state.profile.updated_at = updated_at;
-    // Receipt only — never echo year/month/day/hour.
-    return reply.send({
-      received: true,
-      partial_uncertain: isPartialUncertain(birth),
-      updated_at,
+export async function buildApp(options = {}) {
+  const seedProfile = options.seedProfile ?? loadSeedProfile();
+  const state = createOnboardingState(seedProfile);
+  const sessions = createSessionStore();
+
+  const app = Fastify({
+    logger: options.logger ?? true,
+  });
+
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "POST", "PATCH", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Accept",
+      "Accept-Language",
+      "If-None-Match",
+      "X-Force-Offline",
+    ],
+    exposedHeaders: ["ETag", "Cache-Control"],
+    credentials: true,
+    maxAge: 86400,
+  });
+
+  app.setErrorHandler((err, request, reply) => {
+    if (err.validation || err.statusCode === 400) {
+      const isChat = String(request.url ?? "").includes("/chat");
+      return reply.code(400).send({
+        error: "bad_request",
+        message: isChat
+          ? "tip_id and message are required"
+          : (err.message ?? "invalid request"),
+      });
+    }
+    request.log.error(err);
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    return reply.code(status).send({
+      error: status === 500 ? "internal" : "error",
+      message: status === 500 ? "internal error" : err.message,
     });
-  },
-);
+  });
 
-app.post(
-  "/v1/onboarding/focus",
-  { schema: { body: focusThingSchema } },
-  async (request, reply) => {
-    state.focus = pickFocus(request.body);
-    const updated_at = nowIso();
-    state.profile.updated_at = updated_at;
-    return reply.send({ ok: true, updated_at });
-  },
-);
+  app.get("/v1/tips/today", async (request, reply) => {
+    const locale = resolveLocale(request.headers["accept-language"]);
+    const tip = loadTip(locale);
+    tip.personalization_mode = personalizationMode(state.profile.calibration);
+    return sendCachedJson(request, reply, tip, {
+      "Cache-Control": "private, max-age=300",
+    });
+  });
 
-app.post(
-  "/v1/onboarding/answers",
-  { schema: { body: onboardingAnswersSchema } },
-  async (request, reply) => {
-    state.answers = upsertAnswers(state.answers, request.body.answers);
-    const updated_at = nowIso();
-    state.profile.updated_at = updated_at;
-    return reply.send({ ok: true, updated_at });
-  },
-);
+  app.get("/v1/me", async (request, reply) => {
+    return sendCachedJson(request, reply, publicProfile(state));
+  });
 
-app.post(
-  "/v1/onboarding/complete",
-  {
-    schema: {
-      body: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          skipped_all: { type: "boolean" },
+  async function patchProfile(request, reply) {
+    const profile = applyProfilePatch(state, request.body);
+    return reply.send(profile);
+  }
+
+  app.patch("/v1/me", { schema: { body: profilePatchSchema } }, patchProfile);
+  app.post(
+    "/v1/onboarding/profile",
+    { schema: { body: profilePatchSchema } },
+    patchProfile,
+  );
+
+  app.get("/v1/context/local", async (request, reply) => {
+    const query = request.query ?? {};
+    const lat = parseCoord(query.lat);
+    const lon = parseCoord(query.lon);
+    const city = query.city;
+    const latSet = query.lat != null && query.lat !== "";
+    const lonSet = query.lon != null && query.lon !== "";
+    if (latSet !== lonSet || Number.isNaN(lat) || Number.isNaN(lon)) {
+      return reply.code(400).send({
+        error: "bad_request",
+        message: "lat and lon must be provided together as numbers",
+      });
+    }
+    const locale = resolveLocale(request.headers["accept-language"]);
+    return reply.send(buildLocalContext({ lat, lon, city }, locale));
+  });
+
+  app.post(
+    "/v1/chat",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["message", "tip_id"],
+          properties: {
+            message: { type: "string", minLength: 1, maxLength: 2000 },
+            tip_id: { type: "string", minLength: 1 },
+            locale: { type: "string", enum: SUPPORTED_LOCALES },
+            client_message_id: { type: "string" },
+            session_id: { type: "string" },
+            user_id: { type: "string" },
+            history: {
+              type: "array",
+              maxItems: 20,
+              items: {
+                type: "object",
+                required: ["role", "content"],
+                properties: {
+                  role: { type: "string", enum: ["user", "assistant"] },
+                  content: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
     },
-    preValidation: async (request) => {
-      if (request.body == null) request.body = {};
-    },
-  },
-  async (request, reply) => {
-    const skippedAll = Boolean(request.body?.skipped_all);
-    const result = runCalibration(state, skippedAll);
-    const updated_at = nowIso();
-    state.profile.calibration = result.calibration;
-    state.profile.onboarding_complete = true;
-    state.profile.updated_at = updated_at;
-    return reply.send({
-      calibration: result.calibration,
-      familiarity_delta: result.familiarity_delta,
-      client_message_key: result.client_message_key,
-      updated_at,
-    });
-  },
-);
+    async (request, reply) => {
+      if (request.headers["x-force-offline"] === "1") {
+        return reply.code(503).send({
+          error: "unavailable",
+          message:
+            "Offline / upstream unavailable — client should use reply_pack",
+        });
+      }
 
-try {
-  await app.listen({ port: PORT, host: HOST });
-  app.log.info(`三仔 W2 mock listening on http://${HOST}:${PORT}/v1`);
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
+      const { message, locale, session_id: rawSessionId, user_id: userId } =
+        request.body;
+      const sessionId = rawSessionId || randomUUID();
+      const tipLocale = SUPPORTED_LOCALES.includes(locale)
+        ? locale
+        : DEFAULT_LOCALE;
+      const tip = loadTip(tipLocale);
+      const interests = state.profile.interests ?? [];
+
+      // Session memory: recent turns + tip four fields + interests.
+      // birth_vault is never passed into prompt context.
+      sessions.remember({
+        sessionId,
+        userId,
+        role: "user",
+        content: message,
+        tip,
+        interests,
+      });
+
+      const replyText = buildChatReply(message, tip);
+      sessions.remember({
+        sessionId,
+        userId,
+        role: "assistant",
+        content: replyText,
+        tip,
+        interests,
+      });
+
+      const dial_prompt = nextDialPrompt({
+        answeredQids: answeredQids(state.answers),
+        userTurnCount: sessions.userTurnCount(sessionId, userId),
+      });
+      if (dial_prompt) {
+        sessions.markDialPrompt(sessionId, userId, dial_prompt);
+      }
+
+      return reply.send({
+        reply: replyText,
+        tip_id: tip.id,
+        model_tier: "haiku",
+        finish_reason: "stop",
+        session_id: sessionId,
+        dial_prompt,
+        updated_at: new Date().toISOString(),
+      });
+    },
+  );
+
+  app.get("/v1/reply-packs/current", async (request, reply) => {
+    const locale = resolveLocale(request.headers["accept-language"]);
+    const pack = loadReplyPack(locale);
+    return sendCachedJson(request, reply, pack);
+  });
+
+  app.post(
+    "/v1/onboarding/birth",
+    { schema: { body: birthWriteSchema } },
+    async (request, reply) => {
+      const birth = pickBirth(request.body);
+      state.birth = birth;
+      const updated_at = nowIso();
+      state.profile.updated_at = updated_at;
+      // Receipt only — never echo year/month/day/hour.
+      return reply.send({
+        received: true,
+        partial_uncertain: isPartialUncertain(birth),
+        updated_at,
+      });
+    },
+  );
+
+  app.post(
+    "/v1/onboarding/focus",
+    { schema: { body: focusThingSchema } },
+    async (request, reply) => {
+      state.focus = pickFocus(request.body);
+      const updated_at = nowIso();
+      state.profile.updated_at = updated_at;
+      return reply.send({ ok: true, updated_at });
+    },
+  );
+
+  app.post(
+    "/v1/onboarding/answers",
+    { schema: { body: onboardingAnswersSchema } },
+    async (request, reply) => {
+      state.answers = upsertAnswers(state.answers, request.body.answers);
+      const updated_at = nowIso();
+      state.profile.updated_at = updated_at;
+      return reply.send({ ok: true, updated_at });
+    },
+  );
+
+  app.post(
+    "/v1/onboarding/complete",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            skipped_all: { type: "boolean" },
+          },
+        },
+      },
+      preValidation: async (request) => {
+        if (request.body == null) request.body = {};
+      },
+    },
+    async (request, reply) => {
+      const skippedAll = Boolean(request.body?.skipped_all);
+      const result = runCalibration(state, skippedAll);
+      const updated_at = nowIso();
+      state.profile.calibration = result.calibration;
+      state.profile.onboarding_complete = true;
+      state.profile.updated_at = updated_at;
+      return reply.send({
+        calibration: result.calibration,
+        familiarity_delta: result.familiarity_delta,
+        client_message_key: result.client_message_key,
+        updated_at,
+      });
+    },
+  );
+
+  app.decorate("saamjaiState", state);
+  app.decorate("saamjaiSessions", sessions);
+  return app;
+}
+
+const isDirectRun =
+  Boolean(process.argv[1]) &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  try {
+    const app = await buildApp();
+    await app.listen({ port: PORT, host: HOST });
+    app.log.info(`三仔 W2.5 mock listening on http://${HOST}:${PORT}/v1`);
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
 }

@@ -1,6 +1,7 @@
 /**
- * In-memory W2 onboarding + calibration (mock).
+ * In-memory W2 / W2.5 onboarding + calibration (mock).
  * birth_vault is never returned to the client.
+ * W2.5 profile patch may set display_name + interests only.
  */
 
 export const PROFILE_KEYS = [
@@ -9,11 +10,14 @@ export const PROFILE_KEYS = [
   "locale",
   "familiarity_lv",
   "preferred_domains",
+  "interests",
   "timezone",
   "calibration",
   "onboarding_complete",
   "updated_at",
 ];
+
+export const PROFILE_PATCH_KEYS = ["display_name", "interests"];
 
 const BIRTH_KEYS = ["year", "month", "day", "hour", "uncertain_fields"];
 const FOCUS_KEYS = ["text", "chips"];
@@ -33,6 +37,18 @@ export function createOnboardingState(seedProfile) {
 
 export function publicProfile(state) {
   return pickKeys(state.profile, PROFILE_KEYS);
+}
+
+export function applyProfilePatch(state, body) {
+  const patch = pickKeys(body ?? {}, PROFILE_PATCH_KEYS);
+  if (Object.hasOwn(patch, "display_name") && patch.display_name != null) {
+    state.profile.display_name = String(patch.display_name);
+  }
+  if (Object.hasOwn(patch, "interests") && Array.isArray(patch.interests)) {
+    state.profile.interests = patch.interests.map((item) => String(item));
+  }
+  state.profile.updated_at = nowIso();
+  return publicProfile(state);
 }
 
 export function pickBirth(body) {

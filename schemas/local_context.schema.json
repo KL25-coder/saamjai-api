@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/local_context.json",
+  "title": "LocalContext",
+  "description": "Clothing-oriented weather only. No fortune, luck, chart, or birth fields.",
+  "type": "object",
+  "required": ["weather_band", "summary", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "weather_band": {
+      "type": "string",
+      "enum": ["hot", "cool", "rain"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
