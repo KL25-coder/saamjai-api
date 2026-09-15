@@ -65,8 +65,14 @@
     },
     "onboarding_complete": {
       "type": "boolean"
+    },
+    "interests": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "maxLength": 40 },
+      "description": "Client-kept chips/labels for chat memory; never fortune input or birth"
     }
   },
   "additionalProperties": false,
-  "description": "birth_vault is server-only and must never appear on this schema"
+  "description": "birth_vault is server-only and must never appear on this schema. Client may keep display_name, interests, calibration."
 }

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/session_memory.json",
+  "title": "ChatSessionMemory",
+  "description": "SERVER-ONLY Nova prompt context. Never returned to clients. Never includes birth_vault.",
+  "type": "object",
+  "required": ["turns", "tip", "interests"],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": { "type": "string", "format": "uuid" },
+    "user_id": { "type": "string", "format": "uuid" },
+    "turns": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "assistant"] },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "tip": {
+      "type": "object",
+      "required": ["action", "why"],
+      "additionalProperties": false,
+      "properties": {
+        "care_q": { "type": ["string", "null"] },
+        "banter": { "type": ["string", "null"] },
+        "action": { "type": "string" },
+        "why": { "type": "string" }
+      }
+    },
+    "interests": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

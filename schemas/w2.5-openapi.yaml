@@ -1,0 +1,544 @@
+openapi: 3.0.3
+info:
+  title: 三仔 API (W2.5 stub)
+  version: 0.2.5
+  description: |
+    W2.5 adds **soft onboarding**, **server-side chat session memory**, and
+    **local weather context**. W2 onboarding + tip pipeline stays valid.
+
+    Soft onboarding order (do not dump in one screen):
+    1. `display_name` via PATCH `/me` or POST `/onboarding/profile`
+    2. 三仔 intro — **client-only**, no API
+    3. `interests` via the same profile patch
+    4. birth **later**, with client reason copy, via existing POST `/onboarding/birth`
+    5. five dial Qs (`q1`–`q5`) **spread across later chat rounds**, not one dump;
+       existing POST `/onboarding/answers` with a single `{qid, answer}` is still OK
+
+    Client may persist: `display_name`, `interests`, `calibration`.
+    Birth is write-only (`POST /onboarding/birth`); **never returned** on any
+    client response schema (`/me`, chat, tips, context, calibration).
+
+    Chat session memory (Nova):
+    - Server holds recent **max 12** turns, keyed by `session_id` (preferred) or `user_id`.
+    - Memory contents for LLM prompts = recent messages + today's tip **four fields**
+      (`care_q`, `banter`, `action`, `why`) + `interests` only.
+    - **NEVER inject `birth_vault` raw (year/month/day/hour) into LLM prompts.**
+    - Tip conclusions still come from the **rules engine**. LLM only polishes
+      `care_q` / `banter` / `action` / `why` **tone**. Chat never rewrites conclusions.
+    - `dial_prompt` is a client-safe next soft question **key** (`q1`–`q5`) or `null`.
+      It never includes chart jargon or question copy that leaks fortune internals.
+
+    Weather: `GET /context/local` is clothing-oriented (`hot` / `cool` / `rain`)
+    with a short summary. **No fortune, luck, or chart fields.**
+
+    W2 source of truth remains `schemas/w2-openapi.yaml`. This file is additive.
+
+servers:
+  - url: http://localhost:3000/v1
+    description: Local Fastify mock
+
+paths:
+  /tips/today:
+    get:
+      operationId: getTodayTip
+      summary: Today's tip (personalized or conservative)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Tip three-grid (+ optional banter). Conclusions from rules engine.
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyTip' }
+        '304':
+          description: Not modified
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Profile + calibration (no birth_vault)
+      description: >
+        Client-safe profile. May include display_name, interests, calibration.
+        Never includes birth_vault or year/month/day/hour.
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Profile
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '304':
+          description: Not modified
+    patch:
+      operationId: patchMe
+      summary: Soft-onboarding profile patch (display_name / interests)
+      description: |
+        W2.5 soft onboarding steps 1 and 3. Birth is not accepted here.
+        Client may keep the patched display_name and interests locally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePatch' }
+      responses:
+        '200':
+          description: Updated public profile (no birth fields)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '400':
+          description: Empty or invalid patch
+
+  /onboarding/profile:
+    post:
+      operationId: postOnboardingProfile
+      summary: Alias of PATCH /me for soft-onboarding profile fields
+      description: Same body and response as PATCH /me. Prefer PATCH /me when available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePatch' }
+      responses:
+        '200':
+          description: Updated public profile (no birth fields)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '400':
+          description: Empty or invalid patch
+
+  /chat:
+    post:
+      operationId: postChat
+      summary: Chat with optional server session memory
+      description: |
+        `history` may be omitted; companion stage should omit it and rely on
+        server session memory (max 12 turns).
+
+        Response may include `session_id` (echo or newly issued) and `dial_prompt`
+        (`q1`–`q5` or null) for the next soft dial question in a later round.
+
+        Nova prompt assembly MUST use ChatSessionMemory only — never birth_vault.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '200':
+          description: Reply (+ optional session_id / dial_prompt)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatResponse' }
+        '503':
+          description: Use reply_pack
+
+  /reply-packs/current:
+    get:
+      operationId: getReplyPack
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Offline pack
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReplyPack' }
+        '304':
+          description: Not modified
+
+  /context/local:
+    get:
+      operationId: getLocalContext
+      summary: Local weather band for clothing (not fortune)
+      description: |
+        Mockable clothing hint. Query `lat`+`lon` together, or `city`.
+        If omitted, the mock defaults to Hong Kong / hot.
+        Response has **no** fortune, luck, chart, or birth fields.
+      parameters:
+        - name: lat
+          in: query
+          schema: { type: number, format: double }
+          description: Latitude; require lon when set
+        - name: lon
+          in: query
+          schema: { type: number, format: double }
+          description: Longitude; require lat when set
+        - name: city
+          in: query
+          schema: { type: string, maxLength: 80 }
+          description: City label fallback (e.g. Hong Kong, London)
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Clothing-oriented weather summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LocalContext' }
+        '400':
+          description: lat/lon must be provided together
+
+  /onboarding/birth:
+    post:
+      operationId: postOnboardingBirth
+      summary: Write birth vault (server-only). Response never echoes raw birth fields.
+      description: |
+        Soft-onboarding step 4 — **later**, after name / intro / interests.
+        Client shows reason copy; this endpoint only stores the vault.
+        Response is a receipt. Never returns year/month/day/hour.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BirthVaultWrite' }
+      responses:
+        '200':
+          description: Accepted receipt only
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, partial_uncertain, updated_at]
+                additionalProperties: false
+                properties:
+                  received: { type: boolean }
+                  partial_uncertain: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/focus:
+    post:
+      operationId: postOnboardingFocus
+      summary: One thing user wants company with (text and/or chips)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FocusThing' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, updated_at]
+                properties:
+                  ok: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/answers:
+    post:
+      operationId: postOnboardingAnswers
+      summary: Submit one or more of the five dial questions (skippable, gradual OK)
+      description: |
+        W2 body `{ answers: [ { qid, answer }, ... ] }` is unchanged.
+        A **single qid** (`minItems: 1`) is still OK — W2.5 spreads q1–q5 across
+        later chat rounds instead of one onboarding dump.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: { $ref: '#/components/schemas/OnboardingAnswer' }
+      responses:
+        '200':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, updated_at]
+                properties:
+                  ok: { type: boolean }
+                  updated_at: { type: string, format: date-time }
+
+  /onboarding/complete:
+    post:
+      operationId: postOnboardingComplete
+      summary: Run calibration; returns client-safe status only
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                skipped_all: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Calibration result for short overlay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalibrationResult' }
+
+components:
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      schema: { type: string, enum: [zh-HK, zh-CN, en] }
+
+  schemas:
+    Locale:
+      type: string
+      enum: [zh-HK, zh-CN, en]
+
+    Calibration:
+      type: string
+      enum: [matched, needs_confirm, skipped, pending]
+
+    WeatherBand:
+      type: string
+      enum: [hot, cool, rain]
+      description: Clothing band only — never a fortune or luck label
+
+    DialPrompt:
+      description: >
+        Next soft dial question key for the client to ask in a later chat round.
+        Null when none should be asked now. Never chart jargon or vault fields.
+      nullable: true
+      type: string
+      enum: [q1, q2, q3, q4, q5]
+
+    DailyTip:
+      type: object
+      required: [id, date, locale, action, why, updated_at]
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        locale: { $ref: '#/components/schemas/Locale' }
+        care_q: { type: string, nullable: true }
+        banter: { type: string, nullable: true }
+        action: { type: string }
+        why: { type: string }
+        domain:
+          type: string
+          enum: [health, study, work, romance, family, friends]
+        personalization_mode:
+          type: string
+          enum: [personalized, conservative]
+        updated_at: { type: string, format: date-time }
+
+    TipFourFields:
+      type: object
+      description: >
+        Today's tip fields allowed in LLM prompt context. Rules engine owns the
+        conclusions; LLM may polish tone only. Never attach birth_vault.
+      required: [action, why]
+      additionalProperties: false
+      properties:
+        care_q: { type: string, nullable: true }
+        banter: { type: string, nullable: true }
+        action: { type: string }
+        why: { type: string }
+
+    UserProfile:
+      type: object
+      required: [user_id, display_name, locale, familiarity_lv, preferred_domains, calibration, updated_at]
+      description: >
+        Client-visible profile. May include interests + calibration.
+        birth_vault / year / month / day / hour MUST NOT appear.
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        familiarity_lv: { type: integer, minimum: 1, maximum: 5 }
+        preferred_domains:
+          type: array
+          items:
+            type: string
+            enum: [health, study, work, romance, family, friends]
+        interests:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 40 }
+          description: Client-kept chips/labels for chat memory only — not fortune input
+        timezone: { type: string }
+        calibration: { $ref: '#/components/schemas/Calibration' }
+        onboarding_complete: { type: boolean }
+        updated_at: { type: string, format: date-time }
+
+    ProfilePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Soft-onboarding name / interests only. Birth is never part of this body.
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 40 }
+        interests:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 40 }
+
+    ChatTurn:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+
+    ChatRequest:
+      type: object
+      required: [message, tip_id, locale]
+      properties:
+        message: { type: string, maxLength: 2000 }
+        tip_id: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        client_message_id: { type: string, format: uuid }
+        session_id:
+          type: string
+          format: uuid
+          description: Omit on first turn; echo thereafter so the server can resume memory
+        user_id:
+          type: string
+          format: uuid
+          description: Optional memory-key fallback when session_id is omitted
+        history:
+          type: array
+          maxItems: 20
+          description: >
+            Optional. Companion / W2.5 clients should omit this; the server uses
+            session memory (max 12 turns) instead.
+          items: { $ref: '#/components/schemas/ChatTurn' }
+
+    ChatResponse:
+      type: object
+      required: [reply, tip_id, model_tier, updated_at]
+      description: Client chat payload. Must never include birth_vault or chart jargon.
+      properties:
+        reply: { type: string }
+        tip_id: { type: string }
+        model_tier: { type: string, enum: [haiku, gpt-4o-mini, other-mini] }
+        finish_reason: { type: string, enum: [stop, length, filtered] }
+        session_id:
+          type: string
+          format: uuid
+          description: Issued or echoed session key for server-side memory
+        dial_prompt:
+          $ref: '#/components/schemas/DialPrompt'
+        updated_at: { type: string, format: date-time }
+
+    ChatSessionMemory:
+      type: object
+      description: |
+        SERVER-ONLY prompt context for Nova. Never returned on HTTP responses.
+        Keyed by session_id (preferred) or user_id. Max 12 turns.
+
+        Allowed contents:
+        - recent messages (role + content)
+        - today's tip four fields (care_q, banter, action, why)
+        - interests
+
+        Forbidden: birth_vault, year, month, day, hour, uncertain_fields,
+        chart/palace/luck labels, or any fortune raw.
+      additionalProperties: false
+      required: [turns, tip, interests]
+      properties:
+        session_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        turns:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ChatTurn' }
+        tip: { $ref: '#/components/schemas/TipFourFields' }
+        interests:
+          type: array
+          items: { type: string }
+
+    LocalContext:
+      type: object
+      required: [weather_band, summary, updated_at]
+      additionalProperties: false
+      description: Clothing weather only. No fortune / luck / chart / birth fields.
+      properties:
+        weather_band: { $ref: '#/components/schemas/WeatherBand' }
+        summary:
+          type: string
+          description: Short clothing hint (e.g. 今日偏熱，着透氣薄衫就得)
+        updated_at: { type: string, format: date-time }
+
+    ReplyPack:
+      type: object
+      required: [tip_id, locale, entries, updated_at]
+      properties:
+        tip_id: { type: string }
+        locale: { $ref: '#/components/schemas/Locale' }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [intent, reply]
+            properties:
+              intent:
+                type: string
+                enum: [care, faq_what, faq_why, faq_busy, faq_offline, encourage]
+              triggers:
+                type: array
+                items: { type: string }
+              reply: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    BirthVaultWrite:
+      type: object
+      description: Write-only. Never echoed on any client response.
+      properties:
+        year: { type: integer, nullable: true }
+        month: { type: integer, nullable: true, minimum: 1, maximum: 12 }
+        day: { type: integer, nullable: true, minimum: 1, maximum: 31 }
+        hour: { type: integer, nullable: true, minimum: 0, maximum: 23 }
+        uncertain_fields:
+          type: array
+          items: { type: string, enum: [year, month, day, hour] }
+      additionalProperties: false
+
+    FocusThing:
+      type: object
+      properties:
+        text: { type: string, nullable: true, maxLength: 200 }
+        chips:
+          type: array
+          items:
+            type: string
+            enum: [health, study, work, romance, family]
+      additionalProperties: false
+
+    OnboardingAnswer:
+      type: object
+      required: [qid, answer]
+      properties:
+        qid: { type: string, enum: [q1, q2, q3, q4, q5] }
+        answer: { type: string, enum: [yes, no, unsure, skip] }
+      additionalProperties: false
+
+    CalibrationResult:
+      type: object
+      required: [calibration, client_message_key, updated_at]
+      description: Client-safe overlay only. No raw chart text.
+      properties:
+        calibration: { $ref: '#/components/schemas/Calibration' }
+        familiarity_delta: { type: integer, minimum: 0, maximum: 1 }
+        client_message_key:
+          type: string
+          enum: [matched, needs_confirm, skipped]
+        updated_at: { type: string, format: date-time }

@@ -11,9 +11,20 @@
         "tip_id": { "type": "string" },
         "locale": { "type": "string", "enum": ["zh-HK", "zh-CN", "en"] },
         "client_message_id": { "type": "string", "format": "uuid" },
+        "session_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Omit on first turn; echo thereafter for server session memory"
+        },
+        "user_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Optional memory-key fallback when session_id is omitted"
+        },
         "history": {
           "type": "array",
           "maxItems": 20,
+          "description": "Optional; W2.5 companion stage omits this. Server holds max 12 turns.",
           "items": {
             "type": "object",
             "required": ["role", "content"],
@@ -29,11 +40,18 @@
     "ChatResponse": {
       "type": "object",
       "required": ["reply", "tip_id", "model_tier", "updated_at"],
+      "description": "Never includes birth_vault or chart jargon. dial_prompt is a qid key or null.",
       "properties": {
         "reply": { "type": "string" },
         "tip_id": { "type": "string" },
         "model_tier": { "type": "string", "enum": ["haiku", "gpt-4o-mini", "other-mini"] },
         "finish_reason": { "type": "string", "enum": ["stop", "length", "filtered"] },
+        "session_id": { "type": "string", "format": "uuid" },
+        "dial_prompt": {
+          "type": ["string", "null"],
+          "enum": ["q1", "q2", "q3", "q4", "q5", null],
+          "description": "Next soft dial Q key for a later chat round; never chart jargon"
+        },
         "updated_at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
