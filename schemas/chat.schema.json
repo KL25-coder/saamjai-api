@@ -46,6 +46,11 @@
         "tip_id": { "type": "string" },
         "model_tier": { "type": "string", "enum": ["haiku", "gpt-4o-mini", "other-mini"] },
         "finish_reason": { "type": "string", "enum": ["stop", "length", "filtered"] },
+        "provider": {
+          "type": "string",
+          "enum": ["cloud", "mock", "offline_hint"],
+          "description": "cloud when ANTHROPIC_API_KEY is set and the call succeeds; mock for the deterministic path; offline_hint on 503"
+        },
         "session_id": { "type": "string", "format": "uuid" },
         "dial_prompt": {
           "type": ["string", "null"],

@@ -1,0 +1,85 @@
+{
+  "tip_id": "tip_2026-09-09_zh-HK",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "intent": "care",
+      "triggers": ["在吗", "你好"],
+      "reply": "在。今天工作是不是特别累？",
+      "variants": [
+        "在。今天工作是不是特别累？",
+        "在的。你现在还撑得住吗？",
+        "我在。先别做事，你有空吗？"
+      ]
+    },
+    {
+      "intent": "faq_what",
+      "triggers": ["今天做什么", "一件事"],
+      "reply": "今天只做一件事：十一点前关掉通知，冲完凉就睡。",
+      "variants": [
+        "今天只做一件事：十一点前关掉通知，冲完凉就睡。",
+        "一件事：关通知，冲凉，睡。别再加。",
+        "记住就这件，做完就停。"
+      ]
+    },
+    {
+      "intent": "faq_why",
+      "triggers": ["为什么", "为啥"],
+      "reply": "你最近为工作和家里操心偏多，再撑只会更乱。",
+      "variants": [
+        "你最近为工作和家里操心偏多，再撑只会更乱。",
+        "再撑下去只会更乱，所以先收成一件。",
+        "操心已经够多，今晚先收一收。"
+      ]
+    },
+    {
+      "intent": "faq_busy",
+      "triggers": ["好忙", "没空"],
+      "reply": "行。不逼你现在做。记下，睡前做完就收工。",
+      "variants": [
+        "行。不逼你现在做。记下，睡前做完就收工。",
+        "忙就晚点。记下那一件。",
+        "不催。有空再做，做完就停。"
+      ]
+    },
+    {
+      "intent": "faq_offline",
+      "triggers": [],
+      "reply": "离线中：今天一件事和常见问答照样说；长聊要有网。",
+      "variants": [
+        "离线中：今天一件事和常见问答照样说；长聊要有网。",
+        "现在离线。短问可以，长对话要回网。",
+        "没网也答得了短句。今天就一件事。"
+      ]
+    },
+    {
+      "intent": "encourage",
+      "triggers": ["做完", "好了"],
+      "reply": "行，收工。明天再聊。",
+      "variants": [
+        "行，收工。明天再聊。",
+        "行了。做完就停，别再加。",
+        "收工。明天再说。"
+      ]
+    }
+  ],
+  "openers": [
+    { "time_band": "morning", "opener_weather": "clear", "variants": ["早上好。天色挺清，你醒了吗？"] },
+    { "time_band": "morning", "opener_weather": "cloudy", "variants": ["早上好。天阴，慢慢起就行。"] },
+    { "time_band": "morning", "opener_weather": "rain", "variants": ["早上好。外面下雨，先别出门。"] },
+    { "time_band": "morning", "opener_weather": "extreme", "variants": ["早上好。外面很极端，别硬出。"] },
+    { "time_band": "afternoon", "opener_weather": "clear", "variants": ["中午了。天色挺清，做完一件就歇。"] },
+    { "time_band": "afternoon", "opener_weather": "cloudy", "variants": ["中午了。天阴，慢慢做就行。"] },
+    { "time_band": "afternoon", "opener_weather": "rain", "variants": ["中午了。下雨，出门带伞。"] },
+    { "time_band": "afternoon", "opener_weather": "extreme", "variants": ["中午了。外面很极端，能避就避。"] },
+    { "time_band": "evening", "opener_weather": "clear", "variants": ["晚上了。天色挺清，先把一件事收尾。"] },
+    { "time_band": "evening", "opener_weather": "cloudy", "variants": ["晚上了。天阴，收工就行。"] },
+    { "time_band": "evening", "opener_weather": "rain", "variants": ["晚上了。下雨，回到家就停。"] },
+    { "time_band": "evening", "opener_weather": "extreme", "variants": ["晚上了。外面很极端，待在安全的地方。"] },
+    { "time_band": "late_night", "opener_weather": "clear", "variants": ["深夜了。去睡。"] },
+    { "time_band": "late_night", "opener_weather": "cloudy", "variants": ["深夜了。天阴，关灯休息。"] },
+    { "time_band": "late_night", "opener_weather": "rain", "variants": ["深夜了。下雨，留在家里休息。"] },
+    { "time_band": "late_night", "opener_weather": "extreme", "variants": ["深夜了。外面很极端，你现在安全就行。"] }
+  ],
+  "updated_at": "2026-09-24T02:00:00Z"
+}

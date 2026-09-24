@@ -28,8 +28,26 @@ info:
     - `dial_prompt` is a client-safe next soft question **key** (`q1`–`q5`) or `null`.
       It never includes chart jargon or question copy that leaks fortune internals.
 
-    Weather: `GET /context/local` is clothing-oriented (`hot` / `cool` / `rain`)
-    with a short summary. **No fortune, luck, or chart fields.**
+    Local context (`GET /context/local`) has three separate bands:
+    - `time_band`: `morning` | `afternoon` | `evening` | `late_night`
+      (朝早／晏晝／夜晚／深夜)
+    - `opener_weather`: `clear` | `cloudy` | `rain` | `extreme`
+      (開場天氣帶 — greeting only)
+    - `weather_band`: `hot` | `cool` | `rain` (服裝用 — clothing only)
+    Do not copy `weather_band` into `opener_weather`. No fortune, luck, or chart fields.
+
+    Week 1 dialogue:
+    - Persona is a blunt-but-kind Cantonese friend. Output passes an occult deny-list
+      before it is returned. On a hit, the reply is rewritten to today's action.
+    - `POST /chat` calls cloud Claude Haiku (Anthropic Messages API) only when
+      `ANTHROPIC_API_KEY` is set. Otherwise the deterministic mock is used.
+      There is no on-device Gemma path.
+    - Prompt whitelist: display_name, interests, tip four fields, recent turns,
+      time_band, opener_weather, weather_band, dial_prompt.
+      Never birth_vault / year / month / day / hour / calibration chart.
+    - Response `provider`: `cloud` | `mock` | `offline_hint` (503).
+    - Reply packs add soft-ask `openers` keyed by time_band × opener_weather,
+      plus `variants` on each intent for OfflineProvider.
 
     W2 source of truth remains `schemas/w2-openapi.yaml`. This file is additive.
 
@@ -125,7 +143,10 @@ paths:
         Response may include `session_id` (echo or newly issued) and `dial_prompt`
         (`q1`–`q5` or null) for the next soft dial question in a later round.
 
-        Nova prompt assembly MUST use ChatSessionMemory only — never birth_vault.
+        Nova prompt assembly MUST use ChatPromptContext only — never birth_vault.
+        `provider` is `cloud` when the Anthropic call succeeds, otherwise `mock`.
+        Assistant text is deny-list filtered before the response (`finish_reason: filtered`
+        when rewritten).
       requestBody:
         required: true
         content:
@@ -138,7 +159,18 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ChatResponse' }
         '503':
-          description: Use reply_pack
+          description: "Use reply_pack (provider offline_hint)"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message, provider]
+                properties:
+                  error: { type: string }
+                  message: { type: string }
+                  provider:
+                    type: string
+                    enum: [offline_hint]
 
   /reply-packs/current:
     get:
@@ -160,10 +192,14 @@ paths:
   /context/local:
     get:
       operationId: getLocalContext
-      summary: Local weather band for clothing (not fortune)
+      summary: Local time band, opener weather, and clothing weather
       description: |
-        Mockable clothing hint. Query `lat`+`lon` together, or `city`.
-        If omitted, the mock defaults to Hong Kong / hot.
+        Mockable local context. Query `lat`+`lon` together, or `city`.
+        If omitted, the mock defaults to Hong Kong: clothing `hot`, opener `clear`,
+        and `time_band` from Asia/Hong_Kong.
+
+        `opener_weather` (clear/cloudy/rain/extreme) is resolved separately from
+        `weather_band` (hot/cool/rain). A hot day may be clear, cloudy, or extreme.
         Response has **no** fortune, luck, chart, or birth fields.
       parameters:
         - name: lat
@@ -311,7 +347,21 @@ components:
     WeatherBand:
       type: string
       enum: [hot, cool, rain]
-      description: Clothing band only — never a fortune or luck label
+      description: Clothing band only — never a fortune or luck label. Not opener_weather.
+
+    OpenerWeather:
+      type: string
+      enum: [clear, cloudy, rain, extreme]
+      description: >
+        開場天氣帶 for greetings. Separate enum from WeatherBand.
+        Do not derive this by renaming hot/cool/rain.
+
+    TimeBand:
+      type: string
+      enum: [morning, afternoon, evening, late_night]
+      description: >
+        Four local bands — 朝早 morning (05–11), 晏晝 afternoon (12–17),
+        夜晚 evening (18–22), 深夜 late_night (23–04). Asia/Hong_Kong by default.
 
     DialPrompt:
       description: >
@@ -431,6 +481,12 @@ components:
         tip_id: { type: string }
         model_tier: { type: string, enum: [haiku, gpt-4o-mini, other-mini] }
         finish_reason: { type: string, enum: [stop, length, filtered] }
+        provider:
+          type: string
+          enum: [cloud, mock, offline_hint]
+          description: >
+            cloud = Anthropic Haiku succeeded; mock = deterministic buildChatReply
+            (no API key, or cloud error); offline_hint is sent on 503, not on 200.
         session_id:
           type: string
           format: uuid
@@ -452,6 +508,8 @@ components:
 
         Forbidden: birth_vault, year, month, day, hour, uncertain_fields,
         chart/palace/luck labels, or any fortune raw.
+        The cloud prompt uses ChatPromptContext, which adds display_name and the
+        three local bands on top of this memory. Memory itself still has no birth.
       additionalProperties: false
       required: [turns, tip, interests]
       properties:
@@ -466,21 +524,58 @@ components:
           type: array
           items: { type: string }
 
+    ChatPromptContext:
+      type: object
+      description: |
+        SERVER-ONLY. The only object rendered into the cloud LLM system prompt.
+        Allowed: display_name, interests, tip four fields, recent turns (max 12),
+        time_band, opener_weather, weather_band, dial_prompt.
+        Forbidden: birth_vault, year, month, day, hour, uncertain_fields,
+        calibration raw chart, occult labels as data.
+      additionalProperties: false
+      required:
+        - display_name
+        - interests
+        - tip
+        - turns
+        - time_band
+        - opener_weather
+        - weather_band
+        - dial_prompt
+      properties:
+        display_name: { type: string, nullable: true }
+        interests:
+          type: array
+          items: { type: string }
+        tip: { $ref: '#/components/schemas/TipFourFields' }
+        turns:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ChatTurn' }
+        time_band: { $ref: '#/components/schemas/TimeBand' }
+        opener_weather: { $ref: '#/components/schemas/OpenerWeather' }
+        weather_band: { $ref: '#/components/schemas/WeatherBand' }
+        dial_prompt: { $ref: '#/components/schemas/DialPrompt' }
+
     LocalContext:
       type: object
-      required: [weather_band, summary, updated_at]
+      required: [time_band, opener_weather, weather_band, summary, updated_at]
       additionalProperties: false
-      description: Clothing weather only. No fortune / luck / chart / birth fields.
+      description: >
+        time_band + opener weather + clothing weather. No fortune / luck / chart / birth fields.
+        opener_weather and weather_band are different enums and are resolved independently.
       properties:
+        time_band: { $ref: '#/components/schemas/TimeBand' }
+        opener_weather: { $ref: '#/components/schemas/OpenerWeather' }
         weather_band: { $ref: '#/components/schemas/WeatherBand' }
         summary:
           type: string
-          description: Short clothing hint (e.g. 今日偏熱，着透氣薄衫就得)
+          description: Short clothing hint (e.g. 今日偏熱，着透氣薄衫就得). Not an opener line.
         updated_at: { type: string, format: date-time }
 
     ReplyPack:
       type: object
-      required: [tip_id, locale, entries, updated_at]
+      required: [tip_id, locale, entries, openers, updated_at]
       properties:
         tip_id: { type: string }
         locale: { $ref: '#/components/schemas/Locale' }
@@ -488,7 +583,7 @@ components:
           type: array
           items:
             type: object
-            required: [intent, reply]
+            required: [intent, variants]
             properties:
               intent:
                 type: string
@@ -496,7 +591,30 @@ components:
               triggers:
                 type: array
                 items: { type: string }
-              reply: { type: string }
+              reply:
+                type: string
+                description: Legacy single line. Seeds set this to variants[0].
+              variants:
+                type: array
+                minItems: 1
+                description: OfflineProvider picks one. zh-HK seed has at least 3 per intent.
+                items: { type: string }
+        openers:
+          type: array
+          minItems: 16
+          description: >
+            Soft-ask openers, one cell per time_band × opener_weather.
+            Not keyed by clothing weather_band.
+          items:
+            type: object
+            required: [time_band, opener_weather, variants]
+            properties:
+              time_band: { $ref: '#/components/schemas/TimeBand' }
+              opener_weather: { $ref: '#/components/schemas/OpenerWeather' }
+              variants:
+                type: array
+                minItems: 1
+                items: { type: string }
         updated_at: { type: string, format: date-time }
 
     BirthVaultWrite:

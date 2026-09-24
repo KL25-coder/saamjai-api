@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sanjai.local/schemas/chat_prompt_context.json",
+  "title": "ChatPromptContext",
+  "description": "SERVER-ONLY whitelist rendered into the cloud LLM prompt. Never includes birth_vault, raw birth, or calibration chart.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "display_name",
+    "interests",
+    "tip",
+    "turns",
+    "time_band",
+    "opener_weather",
+    "weather_band",
+    "dial_prompt"
+  ],
+  "properties": {
+    "display_name": { "type": ["string", "null"] },
+    "interests": { "type": "array", "items": { "type": "string" } },
+    "tip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["care_q", "banter", "action", "why"],
+      "properties": {
+        "care_q": { "type": ["string", "null"] },
+        "banter": { "type": ["string", "null"] },
+        "action": { "type": "string" },
+        "why": { "type": "string" }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "assistant"] },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "time_band": {
+      "type": "string",
+      "enum": ["morning", "afternoon", "evening", "late_night"]
+    },
+    "opener_weather": {
+      "type": "string",
+      "enum": ["clear", "cloudy", "rain", "extreme"]
+    },
+    "weather_band": {
+      "type": "string",
+      "enum": ["hot", "cool", "rain"]
+    },
+    "dial_prompt": {
+      "type": ["string", "null"],
+      "enum": ["q1", "q2", "q3", "q4", "q5", null]
+    }
+  }
+}

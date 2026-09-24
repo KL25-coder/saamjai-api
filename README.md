@@ -76,6 +76,32 @@ curl -i -X POST http://localhost:3000/v1/chat \
 curl -i http://localhost:3000/v1/reply-packs/current
 ```
 
+## Week 1 dialogue
+
+Persona is a blunt-but-kind Cantonese friend (not a psychic shop). Tip conclusions stay in the mock/rules copy (`care_q` / `banter` / `action` / `why`). The model only polishes tone. There is **no on-device Gemma** path.
+
+`POST /v1/chat` calls cloud Claude Haiku (Anthropic Messages API) when `ANTHROPIC_API_KEY` is set. With no key, it keeps the deterministic mock (`buildChatReply`) so CI and local runs work offline. Every assistant reply passes an occult deny-list; a hit is rewritten to today's action with no jargon. `provider` is `cloud`, `mock`, or `offline_hint` (the existing `X-Force-Offline: 1` → 503).
+
+The prompt whitelist is `display_name`, `interests`, the tip four fields, recent session turns, `time_band`, `opener_weather`, `weather_band`, and `dial_prompt`. `birth_vault` and raw year/month/day/hour never enter the prompt or the client response.
+
+`GET /v1/context/local` now returns three bands. They are not aliases of each other:
+
+| Field | Values | Use |
+|-------|--------|-----|
+| `time_band` | `morning` / `afternoon` / `evening` / `late_night` | 朝早／晏晝／夜晚／深夜 (05–11 / 12–17 / 18–22 / 23–04, `Asia/Hong_Kong`) |
+| `opener_weather` | `clear` / `cloudy` / `rain` / `extreme` | 開場天氣帶 |
+| `weather_band` | `hot` / `cool` / `rain` | 服裝用 (unchanged) |
+
+Reply packs (`GET /v1/reply-packs/current`, still ETag / 304) add soft-ask `openers` keyed by `time_band` × `opener_weather`, plus `variants` on each intent for OfflineProvider. zh-HK is the full seed; zh-CN and en are light stubs.
+
+### Env
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Cloud Messages API key. Unset → mock replies. |
+| `ANTHROPIC_MODEL` | Default `claude-haiku-4-5`. |
+| `ANTHROPIC_BASE_URL` | Default `https://api.anthropic.com`. |
+
 ## Privacy
 
 - `birth_vault` is server-only — never on client schemas or `/v1/me`
@@ -174,7 +200,7 @@ The mock issues a `session_id` on first chat and echoes it back. After two user 
 
 ### Local weather (clothing, not fortune)
 
-`GET /v1/context/local?lat=&lon=` or `?city=` → `{ weather_band: hot|cool|rain, summary, updated_at }`. No fortune / luck / chart fields. Omit query params to get the Hong Kong hot mock.
+`GET /v1/context/local?lat=&lon=` or `?city=` → `{ time_band, opener_weather, weather_band, summary, updated_at }`. Clothing stays `weather_band: hot|cool|rain`. Opener weather (`clear|cloudy|rain|extreme`) and `time_band` are separate. No fortune / luck / chart fields. Omit query params to get the Hong Kong hot + clear mock; `time_band` follows `Asia/Hong_Kong`.
 
 | Method | Path | Notes |
 |--------|------|--------|

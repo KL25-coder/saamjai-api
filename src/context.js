@@ -1,5 +1,11 @@
 /**
- * W2.5 local weather context (mock). Clothing bands only — no fortune fields.
+ * Local context bands (mock). No fortune fields.
+ *
+ * weather_band — clothing only: hot | cool | rain
+ * opener_weather — greeting atmosphere: clear | cloudy | rain | extreme
+ * time_band — 朝早／晏晝／夜晚／深夜: morning | afternoon | evening | late_night
+ *
+ * opener_weather is resolved on its own. It is not copied from weather_band.
  */
 
 const SUMMARIES = {
@@ -21,6 +27,9 @@ const SUMMARIES = {
 };
 
 export const WEATHER_BANDS = ["hot", "cool", "rain"];
+export const OPENER_WEATHERS = ["clear", "cloudy", "rain", "extreme"];
+export const TIME_BANDS = ["morning", "afternoon", "evening", "late_night"];
+export const DEFAULT_TIME_ZONE = "Asia/Hong_Kong";
 
 export function parseCoord(value) {
   if (value == null || value === "") return null;
@@ -40,12 +49,60 @@ export function resolveWeatherBand({ lat = null, lon = null, city = "" } = {}) {
   return "hot";
 }
 
-export function buildLocalContext(query = {}, locale = "zh-HK") {
-  const band = resolveWeatherBand(query);
+export function resolveOpenerWeather({ city = "" } = {}) {
+  const label = String(city ?? "");
+  if (/(extreme|storm|typhoon|heatwave|颱|飓|颶|酷熱)/i.test(label)) {
+    return "extreme";
+  }
+  if (/(rain|雨|london|seattle)/i.test(label)) return "rain";
+  if (/(cloud|overcast|陰|阴)/i.test(label)) return "cloudy";
+  if (/(clear|sunny|晴)/i.test(label)) return "clear";
+  return "clear";
+}
+
+export function hourInTimeZone(date, timeZone = DEFAULT_TIME_ZONE) {
+  const zone = timeZone || DEFAULT_TIME_ZONE;
+  let fmt;
+  try {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour: "numeric",
+      hourCycle: "h23",
+    });
+  } catch {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: DEFAULT_TIME_ZONE,
+      hour: "numeric",
+      hourCycle: "h23",
+    });
+  }
+  const part = fmt.formatToParts(date).find((p) => p.type === "hour");
+  let hour = Number(part?.value);
+  if (!Number.isInteger(hour)) return 12;
+  if (hour === 24) hour = 0;
+  return hour;
+}
+
+/** 05–11 朝早, 12–17 晏晝, 18–22 夜晚, 23–04 深夜. */
+export function resolveTimeBand(date = new Date(), timeZone = DEFAULT_TIME_ZONE) {
+  const hour = hourInTimeZone(date, timeZone);
+  if (hour >= 5 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18 && hour < 23) return "evening";
+  return "late_night";
+}
+
+export function buildLocalContext(query = {}, locale = "zh-HK", options = {}) {
+  const weather_band = resolveWeatherBand(query);
+  const opener_weather = resolveOpenerWeather(query);
+  const now = options.now instanceof Date ? options.now : new Date();
+  const time_band = resolveTimeBand(now, options.timeZone ?? DEFAULT_TIME_ZONE);
   const pack = SUMMARIES[locale] ?? SUMMARIES["zh-HK"];
   return {
-    weather_band: band,
-    summary: pack[band],
-    updated_at: new Date().toISOString(),
+    time_band,
+    opener_weather,
+    weather_band,
+    summary: pack[weather_band],
+    updated_at: now.toISOString(),
   };
 }
