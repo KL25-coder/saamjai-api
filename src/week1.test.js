@@ -28,6 +28,110 @@ const TIP = {
   why: "你近排為工作同屋企操心偏多，再撐只會更亂。",
 };
 
+/** zh-HK greetings from the Week 2 soft-ask matrix (time_band × opener_weather). */
+const W2_SOFT_ASK_GREETINGS = {
+  morning: {
+    clear: [
+      "早晨。出面幾好天，有冇打算出去行下？",
+      "早。飲咗水未？",
+      "起身啦？慢慢嚟，唔急。",
+      "早晨。陽光夠，起步慢啲都得。",
+    ],
+    cloudy: [
+      "早晨。今日灰灰地，不過唔緊要，慢慢開始。",
+      "早。天陰陰，記得開燈先做嘢。",
+      "早晨。陰天唔代表心情要陰。",
+      "早。慢慢嚟，唔使同天氣鬥快。",
+    ],
+    rain: [
+      "早晨。落雨喎，出門記得帶遮。",
+      "早。雨天慢啲行，唔好趕。",
+      "早晨。雨聲當鬧鐘，唔使急。",
+      "早。濕路地滑，行穩先。",
+    ],
+    extreme: [
+      "早晨。今日天氣麻煩，唔使出門就唔好出，安全第一。",
+      "早。極端天氣，屋企先至穩陣。",
+      "早晨。今日唔好逞強出門。",
+    ],
+  },
+  afternoon: {
+    clear: [
+      "食咗飯未？",
+      "晏晝啦，休息下先。",
+      "出面好曬，飲多啲水。",
+      "午安。熱就停一陣，唔使硬撐。",
+    ],
+    cloudy: [
+      "午安。食飽未？唔好淨食麵包。",
+      "做緊乜？記得食嘢。",
+      "晏晝陰陰地，坐定定食完先。",
+      "午安。補啖飯再繼續。",
+    ],
+    rain: [
+      "落住雨食飯特別舒服，享受下。",
+      "雨天午飯，唔使急住返工。",
+      "晏晝落雨，屋企食完先出。",
+      "午安。雨天唔趕，慢慢食。",
+    ],
+    extreme: [
+      "屋企安全就好。食飽飯坐定定。",
+      "極端天氣，午膳留喺室內。",
+      "食完唔好衝出去，等天氣穩啲。",
+    ],
+  },
+  evening: {
+    clear: [
+      "收工未？今日辛苦晒。",
+      "傍晚啦，放慢啲。",
+      "天色仲好，返屋企路小心。",
+      "傍晚。放低一日嘅趕，慢慢嚟。",
+    ],
+    cloudy: [
+      "夜啦。今日過得點？",
+      "收工路上小心啲。",
+      "天陰陰收工，唔使趕住。",
+      "傍晚。今日夠晒，返屋企先。",
+    ],
+    rain: [
+      "落住雨收工，行慢啲無所謂。",
+      "雨天夜晚，早啲返屋企。",
+      "濕路地，慢慢行就得。",
+      "傍晚落雨，帶遮同暖水。",
+    ],
+    extreme: [
+      "返到屋企未？安全就好。",
+      "極端天氣，返到先報平安。",
+      "今晚唔好流連外面，返屋企先。",
+    ],
+  },
+  late_night: {
+    clear: [
+      "仲未瞓？",
+      "咁夜做乜？早啲休息啦。",
+      "夜深啦，放低螢幕啦。",
+      "深夜。瞓唔著都唔使迫，躺住就夠。",
+    ],
+    cloudy: [
+      "夜深啦，放低電話啦。",
+      "仲唔瞓？",
+      "陰陰深夜，適合收工瞓。",
+      "夜啦。聽日再嚟都得。",
+    ],
+    rain: [
+      "落雨瞓覺最正。去休息啦。",
+      "雨聲好啱瞓，放低嘢啦。",
+      "雨夜唔好硬撐，瞓醒先。",
+      "深夜雨聲，關燈休息啦。",
+    ],
+    extreme: [
+      "風好大，關好窗先瞓。照顧好自己。",
+      "極端天氣夜晚，安全同休息先。",
+      "今夜唔使頑強，關好門窗瞓。",
+    ],
+  },
+};
+
 const TIME_CASES = [
   ["2026-09-24T21:00:00Z", "morning"],
   ["2026-09-24T03:59:00Z", "morning"],
@@ -260,11 +364,26 @@ test("reply pack schema validates seeds, including zh-HK openers and variants", 
   }
   for (const opener of zh.openers) {
     assert.ok(opener.variants.length >= 3, `${opener.time_band} ${opener.opener_weather}`);
+    assert.deepEqual(
+      opener.variants,
+      W2_SOFT_ASK_GREETINGS[opener.time_band][opener.opener_weather],
+      `${opener.time_band} ${opener.opener_weather}`,
+    );
   }
 
   const broken = structuredClone(zh);
   broken.openers[0].opener_weather = "hot";
   assert.equal(validate(broken), false);
+  const overcast = structuredClone(zh);
+  overcast.openers[0].opener_weather = "overcast";
+  assert.equal(validate(overcast), false);
+
+  for (const locale of locales) {
+    const raw = readFileSync(path.join(ROOT, `mocks/reply_pack.${locale}.json`), "utf8");
+    assert.equal(raw.includes("overcast"), false, locale);
+  }
+  const schemaRaw = readFileSync(path.join(ROOT, "schemas/reply_pack.schema.json"), "utf8");
+  assert.equal(schemaRaw.includes("overcast"), false);
 });
 
 test("GET /v1/reply-packs/current keeps ETag and locale fallback", async () => {
