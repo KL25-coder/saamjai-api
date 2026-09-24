@@ -2,17 +2,29 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sanjai.local/schemas/local_context.json",
   "title": "LocalContext",
-  "description": "Clothing-oriented weather only. No fortune, luck, chart, or birth fields.",
+  "description": "Time-of-day band, opener weather (greeting), and clothing weather. opener_weather is not weather_band. No fortune, luck, chart, or birth fields.",
   "type": "object",
-  "required": ["weather_band", "summary", "updated_at"],
+  "required": ["time_band", "opener_weather", "weather_band", "summary", "updated_at"],
   "additionalProperties": false,
   "properties": {
+    "time_band": {
+      "type": "string",
+      "enum": ["morning", "afternoon", "evening", "late_night"],
+      "description": "朝早 morning / 晏晝 afternoon / 夜晚 evening / 深夜 late_night"
+    },
+    "opener_weather": {
+      "type": "string",
+      "enum": ["clear", "cloudy", "rain", "extreme"],
+      "description": "開場天氣帶. Separate from clothing weather_band."
+    },
     "weather_band": {
       "type": "string",
-      "enum": ["hot", "cool", "rain"]
+      "enum": ["hot", "cool", "rain"],
+      "description": "服裝用. Do not copy this into opener_weather."
     },
     "summary": {
-      "type": "string"
+      "type": "string",
+      "description": "Short clothing hint only."
     },
     "updated_at": {
       "type": "string",

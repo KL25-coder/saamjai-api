@@ -1,12 +1,12 @@
 /**
- * Locked-persona mock chat for W1.
+ * Deterministic mock chat used when no cloud API key is set.
  *
  * Voice: blunt-but-kind friend. Optional care. One daily action.
  * Never argue. Never rewrite action/why. Never invent fortune / occult jargon.
+ * Assistant text still passes filterAssistantReply before it leaves the server.
  */
 
-const OCCULT =
-  /運勢|運程|八字|紫微|星盤|宮位|流年|風水|占卜|算命|fortune|horoscope|natal|occult|zodiac/i;
+import { OCCULT_DENY } from "./persona.js";
 
 function includesAny(message, needles) {
   const lower = message.toLowerCase();
@@ -19,7 +19,7 @@ export function buildChatReply(message, tip) {
   const why = tip.why;
   const care = tip.care_q;
 
-  if (OCCULT.test(msg)) {
+  if (OCCULT_DENY.test(msg)) {
     return `唔講呢啲。今日一件事就夠：${action}`;
   }
 

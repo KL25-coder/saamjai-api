@@ -27,7 +27,7 @@ function seedState() {
 }
 
 async function withApp(run) {
-  const app = await buildApp({ logger: false });
+  const app = await buildApp({ logger: false, env: {} });
   await app.ready();
   try {
     return await run(app);
@@ -143,12 +143,18 @@ test("local context is clothing-only (hot/cool/rain), never fortune", () => {
   assert.equal(resolveWeatherBand({ city: "Seoul" }), "cool");
   assert.equal(resolveWeatherBand({ lat: 51.5, lon: -0.1 }), "cool");
 
-  const payload = buildLocalContext({ city: "Hong Kong" }, "zh-HK");
+  const payload = buildLocalContext({ city: "Hong Kong" }, "zh-HK", {
+    now: new Date("2026-09-24T02:00:00Z"),
+  });
   assert.equal(payload.weather_band, "hot");
+  assert.equal(payload.opener_weather, "clear");
+  assert.equal(payload.time_band, "morning");
   assert.equal(typeof payload.summary, "string");
   assert.equal(typeof payload.updated_at, "string");
   assert.deepEqual(Object.keys(payload).sort(), [
+    "opener_weather",
     "summary",
+    "time_band",
     "updated_at",
     "weather_band",
   ]);

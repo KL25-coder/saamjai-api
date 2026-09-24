@@ -1,0 +1,85 @@
+{
+  "tip_id": "tip_2026-09-09_zh-HK",
+  "locale": "en",
+  "entries": [
+    {
+      "intent": "care",
+      "triggers": ["hi", "hey", "you there"],
+      "reply": "Here. Was work especially heavy today?",
+      "variants": [
+        "Here. Was work especially heavy today?",
+        "I'm here. Are you still holding up?",
+        "Here. Before the task — do you have a minute?"
+      ]
+    },
+    {
+      "intent": "faq_what",
+      "triggers": ["what today", "one thing"],
+      "reply": "One thing today: notifications off by eleven, shower, then sleep.",
+      "variants": [
+        "One thing today: notifications off by eleven, shower, then sleep.",
+        "Just that one thing. Don't add another.",
+        "Off, shower, sleep. That's the list."
+      ]
+    },
+    {
+      "intent": "faq_why",
+      "triggers": ["why"],
+      "reply": "Work and home have been a lot. Pushing further only makes it messier.",
+      "variants": [
+        "Work and home have been a lot. Pushing further only makes it messier.",
+        "That's why it stays one thing.",
+        "Enough worry for today. Close it down."
+      ]
+    },
+    {
+      "intent": "faq_busy",
+      "triggers": ["busy", "later"],
+      "reply": "Fine. Not pushing you now. Remember it, then stop.",
+      "variants": [
+        "Fine. Not pushing you now. Remember it, then stop.",
+        "Busy is fine. Do the one thing when you can.",
+        "No rush. One thing, then you're done."
+      ]
+    },
+    {
+      "intent": "faq_offline",
+      "triggers": [],
+      "reply": "Offline: the one thing and short answers still work. Long chat needs a connection.",
+      "variants": [
+        "Offline: the one thing and short answers still work. Long chat needs a connection.",
+        "No connection. Short answers only.",
+        "Still here for the one thing. Longer talk waits for a network."
+      ]
+    },
+    {
+      "intent": "encourage",
+      "triggers": ["done", "ok"],
+      "reply": "Done. We can talk tomorrow.",
+      "variants": [
+        "Done. We can talk tomorrow.",
+        "Good. Stop there. Don't add more.",
+        "That's enough for today."
+      ]
+    }
+  ],
+  "openers": [
+    { "time_band": "morning", "opener_weather": "clear", "variants": ["Morning. It's clear. You up?"] },
+    { "time_band": "morning", "opener_weather": "cloudy", "variants": ["Morning. Cloudy out. No rush."] },
+    { "time_band": "morning", "opener_weather": "rain", "variants": ["Morning. It's raining. Stay in a minute."] },
+    { "time_band": "morning", "opener_weather": "extreme", "variants": ["Morning. It's extreme outside. Don't force it."] },
+    { "time_band": "afternoon", "opener_weather": "clear", "variants": ["Afternoon. Clear out. One thing, then rest."] },
+    { "time_band": "afternoon", "opener_weather": "cloudy", "variants": ["Afternoon. Cloudy. Take it slow."] },
+    { "time_band": "afternoon", "opener_weather": "rain", "variants": ["Afternoon. Rain. Take a cover if you go out."] },
+    { "time_band": "afternoon", "opener_weather": "extreme", "variants": ["Afternoon. Extreme outside. Stay safe if you can."] },
+    { "time_band": "evening", "opener_weather": "clear", "variants": ["Evening. Clear sky. Finish the one thing."] },
+    { "time_band": "evening", "opener_weather": "cloudy", "variants": ["Evening. Cloudy. You can stop soon."] },
+    { "time_band": "evening", "opener_weather": "rain", "variants": ["Evening. Rain. Home, then stop."] },
+    { "time_band": "evening", "opener_weather": "extreme", "variants": ["Evening. Extreme outside. Stay somewhere safe."] },
+    { "time_band": "late_night", "opener_weather": "clear", "variants": ["Late. Go sleep."] },
+    { "time_band": "late_night", "opener_weather": "cloudy", "variants": ["Late. Cloudy night. Lights off."] },
+    { "time_band": "late_night", "opener_weather": "rain", "variants": ["Late. Rain. Stay in and rest."] },
+    { "time_band": "late_night", "opener_weather": "extreme", "variants": ["Late. Extreme outside. Safe is enough."] }
+  ],
+  "updated_at": "2026-09-24T02:00:00Z"
+}

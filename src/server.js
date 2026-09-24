@@ -4,8 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
-import { buildChatReply } from "./chat.js";
 import { buildLocalContext, parseCoord } from "./context.js";
+import { resolveChatReply, resolveLlmConfig } from "./llm.js";
+import { filterAssistantReply, injectChatContext } from "./persona.js";
 import {
   applyProfilePatch,
   createOnboardingState,
@@ -173,6 +174,16 @@ export async function buildApp(options = {}) {
   const seedProfile = options.seedProfile ?? loadSeedProfile();
   const state = createOnboardingState(seedProfile);
   const sessions = createSessionStore();
+  const llm = resolveLlmConfig(options.env ?? process.env);
+  const fetchImpl = options.fetchImpl;
+  const clock = typeof options.now === "function" ? options.now : () => new Date();
+
+  function localContextFor(query, locale) {
+    return buildLocalContext(query, locale, {
+      now: clock(),
+      timeZone: state.profile.timezone || "Asia/Hong_Kong",
+    });
+  }
 
   const app = Fastify({
     logger: options.logger ?? true,
@@ -250,7 +261,7 @@ export async function buildApp(options = {}) {
       });
     }
     const locale = resolveLocale(request.headers["accept-language"]);
-    return reply.send(buildLocalContext({ lat, lon, city }, locale));
+    return reply.send(localContextFor({ lat, lon, city }, locale));
   });
 
   app.post(
@@ -289,6 +300,7 @@ export async function buildApp(options = {}) {
           error: "unavailable",
           message:
             "Offline / upstream unavailable — client should use reply_pack",
+          provider: "offline_hint",
         });
       }
 
@@ -312,16 +324,6 @@ export async function buildApp(options = {}) {
         interests,
       });
 
-      const replyText = buildChatReply(message, tip);
-      sessions.remember({
-        sessionId,
-        userId,
-        role: "assistant",
-        content: replyText,
-        tip,
-        interests,
-      });
-
       const dial_prompt = nextDialPrompt({
         answeredQids: answeredQids(state.answers),
         userTurnCount: sessions.userTurnCount(sessionId, userId),
@@ -330,14 +332,53 @@ export async function buildApp(options = {}) {
         sessions.markDialPrompt(sessionId, userId, dial_prompt);
       }
 
+      const memory = sessions.promptContext(sessionId, userId);
+      const bands = localContextFor({}, tipLocale);
+      // Whitelist only. state.birth / calibration chart must not be copied in.
+      const chatContext = injectChatContext({
+        display_name: state.profile.display_name,
+        interests: memory.interests,
+        tip: memory.tip,
+        turns: memory.turns,
+        time_band: bands.time_band,
+        opener_weather: bands.opener_weather,
+        weather_band: bands.weather_band,
+        dial_prompt,
+      });
+
+      const resolved = await resolveChatReply({
+        message,
+        tip,
+        context: chatContext,
+        llm,
+        fetchImpl,
+      });
+      if (resolved.error) {
+        request.log.warn(
+          { err: resolved.error },
+          "cloud llm unavailable; mock reply",
+        );
+      }
+      const filtered = filterAssistantReply(resolved.text, tip);
+
+      sessions.remember({
+        sessionId,
+        userId,
+        role: "assistant",
+        content: filtered.reply,
+        tip,
+        interests,
+      });
+
       return reply.send({
-        reply: replyText,
+        reply: filtered.reply,
         tip_id: tip.id,
         model_tier: "haiku",
-        finish_reason: "stop",
+        finish_reason: filtered.finish_reason,
+        provider: resolved.provider,
         session_id: sessionId,
         dial_prompt,
-        updated_at: new Date().toISOString(),
+        updated_at: clock().toISOString(),
       });
     },
   );
